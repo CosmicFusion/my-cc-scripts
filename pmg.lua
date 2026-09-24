@@ -194,10 +194,8 @@ local function drawGUI(mainsVolt, mainsPower, genStates, errors, btnState)
     end
 end
 
--- Main Event Loop Variables
-local alarmTimer = nil
-
-while true do
+-- Function to read sensors, update logic, redstone, and redraw screen
+local function updateSystem()
     local successVolt, mainsVolt = pcall(function() return mains_voltage_gauge.voltage() end)
     if not successVolt then mainsVolt = 0.0 end
 
@@ -239,17 +237,22 @@ while true do
     -- Draw current GUI state
     drawGUI(mainsVolt, mainsPower, genStates, errors, btnVisualState)
 
-    -- Handle Pulsing Alarm Timer for Errors
-    if (gensError or voltageError or powerError) then
-        if not alarmTimer then
-            alarmTimer = os.startTimer(0.4)
-        end
-    else
-        alarmTimer = nil
-    end
+    return (gensError or voltageError or powerError)
+end
 
-    -- Event Handling
+-- Main Event Loop Variables
+local alarmTimer = nil
+local refreshTimer = os.startTimer(5)
+
+-- Initial run
+local hasErrors = updateSystem()
+if hasErrors then
+    alarmTimer = os.startTimer(0.4)
+end
+
+while true do
     local event, p1, p2, p3 = os.pullEvent()
+    
     if event == "monitor_touch" then
         local tSide, tX, tY = p1, p2, p3
         if tX >= btnX1 and tX <= btnX2 and tY >= btnY1 and tY <= btnY2 then
@@ -268,6 +271,17 @@ while true do
                 pcall(function() speaker.playNote("bell", 0.5, 1) end)
             end
             alarmTimer = os.startTimer(0.4) -- restart timer for next error pulse
+        elseif p1 == refreshTimer then
+            hasErrors = updateSystem()
+            
+            -- Manage alarm timer status based on current errors
+            if hasErrors and not alarmTimer then
+                alarmTimer = os.startTimer(0.4)
+            elseif not hasErrors then
+                alarmTimer = nil
+            end
+            
+            refreshTimer = os.startTimer(5) -- restart 5-second refresh timer
         end
     end
 end
